@@ -1,0 +1,159 @@
+---
+title: "Practical Machine Learning-Prediction Project"
+author: "Suganthi M"
+date: "January 31, 2017"
+
+---
+## Introduction
+
+### Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+### Project Description
+
+The purpose of this project is to predict the manner in which individuals performed the exercise. Six participants were asked to perform barbell lifts correctly and incorrectly in 5 different ways. In the "classe" variable in the training set an "A" corresponds to the correct execution of the exercise, while the other 4 classes (B through E) correspond to common mistakes. By using data from accelerometers on the belt, forearm, arm, and dumbell we aim to predict which class the observation falls in.
+
+### Data Source
+
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. 
+
+## Data Preprocessing
+
+Download the files from the URL and copy it in your working directory. Once done, lets load the data in R.The data from training file will be split into two datasets - Training data set and Testind Data set.
+
+The data from the testing file will be used as Validation set.So there would be three data sets
+- Training
+- Testing
+- Validation
+
+```{r echo=FALSE}
+library(caret)
+library(ggplot2)
+training_data<-read.csv("pml-training.csv")
+validation_data<-read.csv("pml-testing.csv")
+```
+
+### Data Split into Training and testing 
+
+The data set is huge to build the prediction model. So lets split the Training data set into Training and Testing respectively.
+
+The testing dataset provided in the URL will be considered as a Validation data set to predict our results once we finalise the model.
+
+```{r}
+set.seed(222)
+in_train <- createDataPartition(training_data$classe, p=0.7, list=FALSE)
+training_split <- training_data[in_train ,]
+testing_split <- training_data[-in_train ,]
+dim(training_split);dim(testing_split)
+```
+
+### Remove Zero Covariates, NA's and Select Required Columns
+
+The dataset contains large number of predictors. We need to do some data cleaning to choose the predictors needed.
+
+We need to remove the Zero Variance or near Zero variance predictors from the data set.
+```{r}
+nsv<-nearZeroVar(training_split, saveMetrics=TRUE) # Find the columns where the data is near zero variance
+trainingSub <- training_split[,nsv$nzv==FALSE] # subset columns other than near zero variance
+```
+Keep only the required predictors. The first 6 columns are not necessary so removing those from the subset of predictors.
+```{r}
+trainingSub <- trainingSub[,7:length(colnames(trainingSub))] 
+```
+
+Lets find the predictors that have NAs in more than 50% of the rows and eliminate the same.
+```{r}
+dropcolumns<-colSums(is.na(trainingSub))>=nrow(trainingSub)/2 # find the columns that contains NAs in 50% of the rows
+Keepcolumns<-names(dropcolumns)[dropcolumns==FALSE] # keep only the required column name list
+FinalTraining<-trainingSub[,Keepcolumns] # select only the columns required
+training<-FinalTraining
+dim(training)
+```
+
+we need to keep the same columns in testing but no other changes should be done on the testing data set
+```{r}
+keepCols <- colnames(training[, -53])
+testingSub <- testing_split[Keepcolumns]
+testing<-testingSub
+dim(testing)
+```
+
+## Model Building, Testing and Validation
+
+We will build two different models using the following two algorithms
+    - *Random Forest* and 
+    - *Decision Tree: Recursive Partitioning and Regression Trees*
+  
+and compare each with training dataset and find the best model based on the accuracy of the each model. The models will be build with K-fold cross validation. We will build two different models using training dataset and predict using the testing dataset (partitioned within training dataset). We will also predict using validation data set.
+
+```{r echo=FALSE}
+ library(randomForest)
+ library(rpart)
+ library(rattle)
+```
+```{r}
+## Random Forest
+
+mod_rf<-train(classe~.,data=training, method="rf", ntree=100,trControl=trainControl(method='cv', number = 5))
+# Predict the outcome of the random forest model using testing data
+pred_rf <- predict(mod_rf,testing)
+cm_rf<-confusionMatrix(pred_rf, testing$classe)
+cm_rf
+
+## Decision tree 
+mod_part<-train(  classe ~ .,   data=training,   method='rpart',trControl=trainControl(method='cv', number = 5))
+# Predict the outcome of the decision tree model using testing data
+pred_part <- predict(mod_part, testing)
+cm_part <- confusionMatrix(pred_part, testing$classe)
+cm_part
+# plot the model
+ fancyRpartPlot(mod_part$finalModel)
+```
+
+Lets compare the accuracy of both the models.
+```{r}
+cm_rf$overall[1]
+cm_part$overall[1]
+```
+
+From the accuracy , random forest performs way better than the Decision tree model with accuracy 
+`r cm_rf$overall[1]`
+
+Out of sample accuracy error rate would be 1-`r cm_rf$overall[1]` = 0.0062872. 
+
+The top predictor variables of importance in building the random forest model are
+```{r}
+rownames(varImp(mod_rf)$importance)[1:5]
+```
+```
+$importance
+                         Overall
+roll_belt            100.0000000
+pitch_belt            38.7888160
+yaw_belt              55.2338367
+total_accel_belt       2.7661504
+gyros_belt_x           1.4042911
+```
+
+We can select random forest as our final model.Lets apply the final Random forest model to our validation dataset
+
+```{r}
+pred_validation <- predict(mod_rf,validation_data)
+pred_validation
+
+```
+
+## Conclusion
+
+Removing the unnecessary predictors in the data set helped the performance of the models.The performance of Decision tree model was better than the Random Forest model. However, random forest model outperformed decision tree model, with accuracy rate 0.0062872, hence random forest is the best model for this analysis.
+
+
+
+
